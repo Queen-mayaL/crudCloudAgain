@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"  # Database URL
@@ -106,6 +107,5 @@ def delete_car(car_id: int, db: Session = Depends(get_db)):
 
 
 
-if __name__ == "__main__":
-    import uvicorn
+def start():
     uvicorn.run(app, host="0.0.0.0", port=8000)

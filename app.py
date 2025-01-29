@@ -105,7 +105,9 @@ def delete_car(car_id: int, db: Session = Depends(get_db)):
     db.commit()
     return db_car
 
+@app.get("/")
+def read_root():
+    return {"message": "Hello, World!"}
 
-
-def start():
+if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

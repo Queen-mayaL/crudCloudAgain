@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
@@ -8,6 +8,8 @@ from fastapi.staticfiles import StaticFiles
 import shutil
 import os
 import uvicorn
+from typing import Optional
+import json
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
@@ -39,7 +41,7 @@ class CarCreate(CarBase):
 
 class CarResponse(CarBase):
     id: int
-    image_url: str | None = None
+    image_url: Optional[str] = None
 
     class Config:
         orm_mode = True
@@ -70,35 +72,45 @@ app.add_middleware(
 # Serve uploaded images
 app.mount("/car_images", StaticFiles(directory=IMAGE_DIR), name="car_images")
 
-# Create multiple cars
 @app.post("/cars", response_model=list[CarResponse])
-def create_cars(cars: list[CarCreate], db: Session = Depends(get_db)):
-    db_cars = [Car(make=car.make, model=car.model, year=car.year) for car in cars]
-    db.add_all(db_cars)
-    db.commit()
-    for db_car in db_cars:
-        db.refresh(db_car)
-    return db_cars
+def create_cars(
+    cars: str = Form(...),  # Accept JSON as a string
+    files: list[UploadFile] = File(None),
+    db: Session = Depends(get_db)
+):
+    from pydantic import parse_obj_as
+    
+    try:
+        cars_data = parse_obj_as(list[CarCreate], json.loads(cars))  # Convert JSON string to list
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON format")
 
-# Upload a car image
-@app.post("/cars/{car_id}/upload_image")
-def upload_car_image(car_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    db_car = db.query(Car).filter(Car.id == car_id).first()
-    if db_car is None:
-        raise HTTPException(status_code=404, detail="Car not found")
-    
-    file_extension = file.filename.split(".")[-1]
-    filename = f"car_{car_id}.{file_extension}"
-    file_path = os.path.join(IMAGE_DIR, filename)
-    
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    db_car.image_filename = filename
-    db.commit()
-    db.refresh(db_car)
-    
-    return {"image_url": f"/car_images/{filename}"}
+    if files and len(files) != len(cars_data):
+        raise HTTPException(status_code=400, detail="Number of images must match number of cars")
+
+    db_cars = []
+    for i, car in enumerate(cars_data):
+        db_car = Car(make=car.make, model=car.model, year=car.year)
+        db.add(db_car)
+        db.commit()
+        db.refresh(db_car)
+
+        if files and files[i]:
+            file = files[i]
+            file_extension = file.filename.split(".")[-1]
+            filename = f"car_{db_car.id}.{file_extension}"
+            file_path = os.path.join(IMAGE_DIR, filename)
+
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+            db_car.image_filename = filename
+            db.commit()
+            db.refresh(db_car)
+
+        db_cars.append(db_car)
+
+    return db_cars
 
 # Get all cars
 @app.get("/cars", response_model=list[CarResponse])
@@ -115,6 +127,62 @@ def get_car(car_id: int, db: Session = Depends(get_db)):
     if db_car is None:
         raise HTTPException(status_code=404, detail="Car not found")
     db_car.image_url = f"/car_images/{db_car.image_filename}" if db_car.image_filename else None
+    return db_car
+
+@app.delete("/cars/{car_id}")
+def delete_car(car_id: int, db: Session = Depends(get_db)):
+    db_car = db.query(Car).filter(Car.id == car_id).first()
+    if not db_car:
+        raise HTTPException(status_code=404, detail="Car not found")
+
+    # Delete car image if exists
+    if db_car.image_filename:
+        file_path = os.path.join(IMAGE_DIR, db_car.image_filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+    db.delete(db_car)
+    db.commit()
+    return {"message": "Car deleted successfully"}
+
+@app.put("/cars/{car_id}")
+def update_car(
+    car_id: int,
+    make: Optional[str] = Form(None),
+    model: Optional[str] = Form(None),
+    year: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
+):
+    db_car = db.query(Car).filter(Car.id == car_id).first()
+    if not db_car:
+        raise HTTPException(status_code=404, detail="Car not found")
+
+    # Only update fields that are provided
+    if make:
+        db_car.make = make
+    if model:
+        db_car.model = model
+    if year:
+        try:
+            db_car.year = int(year)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid year format")
+
+    # Handle image upload
+    if file:
+        file_extension = file.filename.split(".")[-1]
+        filename = f"car_{db_car.id}.{file_extension}"
+        file_path = os.path.join(IMAGE_DIR, filename)
+
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        db_car.image_filename = filename
+
+    db.commit()
+    db.refresh(db_car)
+
     return db_car
 
 @app.get("/")

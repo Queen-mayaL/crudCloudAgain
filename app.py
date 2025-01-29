@@ -57,12 +57,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# CRUD operations
-
-@app.get("/")
-def read_root():
-    return {"message": "Hello, World!"}
-
 # Create multiple cars
 @app.post("/cars", response_model=list[CarResponse])
 def create_cars(cars: list[CarCreate], db: Session = Depends(get_db)):
@@ -109,3 +103,9 @@ def delete_car(car_id: int, db: Session = Depends(get_db)):
     db.delete(db_car)
     db.commit()
     return db_car
+
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

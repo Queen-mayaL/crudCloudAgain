@@ -59,6 +59,10 @@ app.add_middleware(
 
 # CRUD operations
 
+@app.get("/")
+def read_root():
+    return {"message": "Hello, World!"}
+
 # Create multiple cars
 @app.post("/cars", response_model=list[CarResponse])
 def create_cars(cars: list[CarCreate], db: Session = Depends(get_db)):

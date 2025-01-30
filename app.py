@@ -1,8 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import shutil
@@ -10,9 +9,14 @@ import os
 import uvicorn
 from typing import Optional
 import json
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Database setup
-SQLALCHEMY_DATABASE_URL = "postgresql://cars_database_ka2i_user:IqQhWvkdZgM7HSxfGSbcupsvD9aJtgtH@dpg-cuds9vdumphs73cskm70-a.oregon-postgres.render.com/cars_database_ka2i"
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+if not SQLALCHEMY_DATABASE_URL:
+    raise ValueError("DATABASE_URL is not set in environment variables")
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"sslmode": "require"})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -44,7 +48,7 @@ class CarResponse(CarBase):
     image_url: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # Dependency to get the DB session
 def get_db():

@@ -10,7 +10,7 @@ import uvicorn
 from typing import Optional
 import json
 from dotenv import load_dotenv
-
+from fastapi.responses import FileResponse
 load_dotenv()
 
 # Database setup
@@ -75,6 +75,10 @@ app.add_middleware(
 
 # Serve uploaded images
 app.mount("/car_images", StaticFiles(directory=IMAGE_DIR), name="car_images")
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("static/favicon.ico")
 
 @app.post("/cars", response_model=list[CarResponse])
 def create_cars(

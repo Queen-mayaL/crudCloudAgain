@@ -12,8 +12,8 @@ from typing import Optional
 import json
 
 # Database setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+SQLALCHEMY_DATABASE_URL = "postgresql://cars_database_ka2i_user:IqQhWvkdZgM7HSxfGSbcupsvD9aJtgtH@dpg-cuds9vdumphs73cskm70-a.oregon-postgres.render.com/cars_database_ka2i"
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"sslmode": "require"})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

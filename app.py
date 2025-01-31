@@ -11,6 +11,8 @@ from typing import Optional
 import json
 from dotenv import load_dotenv
 from fastapi.responses import FileResponse
+from PIL import Image  # Import Pillow for image compression
+
 load_dotenv()
 
 # Database setup
@@ -24,6 +26,16 @@ Base = declarative_base()
 # Image storage directory
 IMAGE_DIR = "car_images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
+
+# Image compression function
+def compress_image(file_path):
+    try:
+        img = Image.open(file_path)
+        img = img.convert("RGB")  # Convert to RGB to avoid issues
+        img = img.resize((500, 500))  # Resize to 500x500 pixels
+        img.save(file_path, "JPEG", quality=80)  # Save as JPEG with 80% quality
+    except Exception as e:
+        print(f"Image compression failed: {e}")
 
 # Database model
 class Car(Base):
@@ -112,6 +124,9 @@ def create_cars(
             with open(file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
 
+            # Compress the image before saving
+            compress_image(file_path)
+
             db_car.image_filename = filename
             db.commit()
             db.refresh(db_car)
@@ -185,6 +200,9 @@ def update_car(
 
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+
+        # Compress the image
+        compress_image(file_path)
 
         db_car.image_filename = filename
 

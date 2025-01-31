@@ -79,8 +79,6 @@ def get_db():
     finally:
         db.close()
 
-# Create database tables
-Base.metadata.drop_all(bind=engine)  # Drop all tables before recreating them
 Base.metadata.create_all(bind=engine)
 
 

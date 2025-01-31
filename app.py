@@ -12,6 +12,8 @@ import json
 from dotenv import load_dotenv
 from fastapi.responses import FileResponse
 from PIL import Image  # Import Pillow for image compression
+import cloudinary
+import cloudinary.uploader
 
 load_dotenv()
 
@@ -23,9 +25,16 @@ engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"sslmode": "requir
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET")
+)
+
 # Image storage directory
-IMAGE_DIR = "car_images"
-os.makedirs(IMAGE_DIR, exist_ok=True)
+# IMAGE_DIR = "car_images"
+# os.makedirs(IMAGE_DIR, exist_ok=True)
 
 # Image compression function
 def compress_image(file_path):
@@ -86,7 +95,7 @@ app.add_middleware(
 )
 
 # Serve uploaded images
-app.mount("/car_images", StaticFiles(directory=IMAGE_DIR), name="car_images")
+# app.mount("/car_images", StaticFiles(directory=IMAGE_DIR), name="car_images")
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
@@ -99,7 +108,8 @@ def create_cars(
     db: Session = Depends(get_db)
 ):
     from pydantic import parse_obj_as
-    
+    import json
+
     try:
         cars_data = parse_obj_as(list[CarCreate], json.loads(cars))  # Convert JSON string to list
     except Exception:
@@ -115,19 +125,12 @@ def create_cars(
         db.commit()
         db.refresh(db_car)
 
+        # Upload image to Cloudinary
         if files and files[i]:
             file = files[i]
-            file_extension = file.filename.split(".")[-1]
-            filename = f"car_{db_car.id}.{file_extension}"
-            file_path = os.path.join(IMAGE_DIR, filename)
+            result = cloudinary.uploader.upload(file.file, folder="car_images")
+            db_car.image_url = result["secure_url"]  # Store Cloudinary URL
 
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-
-            # Compress the image before saving
-            compress_image(file_path)
-
-            db_car.image_filename = filename
             db.commit()
             db.refresh(db_car)
 
@@ -135,34 +138,34 @@ def create_cars(
 
     return db_cars
 
+
 # Get all cars
 @app.get("/cars", response_model=list[CarResponse])
 def get_cars(db: Session = Depends(get_db)):
     cars = db.query(Car).all()
-    for car in cars:
-        car.image_url = f"/car_images/{car.image_filename}" if car.image_filename else None
-    return cars
+    return cars  # No need to manually add image_url, it's already stored in DB
 
-# Get a single car by ID
-@app.get("/cars/{car_id}", response_model=CarResponse)
-def get_car(car_id: int, db: Session = Depends(get_db)):
-    db_car = db.query(Car).filter(Car.id == car_id).first()
-    if db_car is None:
-        raise HTTPException(status_code=404, detail="Car not found")
-    db_car.image_url = f"/car_images/{db_car.image_filename}" if db_car.image_filename else None
-    return db_car
 
+# # Get a single car by ID
+# @app.get("/cars/{car_id}", response_model=CarResponse)
+# def get_car(car_id: int, db: Session = Depends(get_db)):
+#     db_car = db.query(Car).filter(Car.id == car_id).first()
+#     if db_car is None:
+#         raise HTTPException(status_code=404, detail="Car not found")
+#     db_car.image_url = f"/car_images/{db_car.image_filename}" if db_car.image_filename else None
+#     return db_car
+
+@app.delete("/cars/{car_id}")
 @app.delete("/cars/{car_id}")
 def delete_car(car_id: int, db: Session = Depends(get_db)):
     db_car = db.query(Car).filter(Car.id == car_id).first()
     if not db_car:
         raise HTTPException(status_code=404, detail="Car not found")
 
-    # Delete car image if exists
-    if db_car.image_filename:
-        file_path = os.path.join(IMAGE_DIR, db_car.image_filename)
-        if os.path.exists(file_path):
-            os.remove(file_path)
+    # Delete image from Cloudinary if exists
+    if db_car.image_url:
+        public_id = db_car.image_url.split("/")[-1].split(".")[0]
+        cloudinary.uploader.destroy(public_id)
 
     db.delete(db_car)
     db.commit()
@@ -181,7 +184,7 @@ def update_car(
     if not db_car:
         raise HTTPException(status_code=404, detail="Car not found")
 
-    # Only update fields that are provided
+    # Only update provided fields
     if make:
         db_car.make = make
     if model:
@@ -192,24 +195,22 @@ def update_car(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid year format")
 
-    # Handle image upload
+    # If a new image is uploaded, replace the old one
     if file:
-        file_extension = file.filename.split(".")[-1]
-        filename = f"car_{db_car.id}.{file_extension}"
-        file_path = os.path.join(IMAGE_DIR, filename)
+        # Delete old image from Cloudinary
+        if db_car.image_url:
+            public_id = db_car.image_url.split("/")[-1].split(".")[0]  # Extract public_id
+            cloudinary.uploader.destroy(public_id)
 
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        # Compress the image
-        compress_image(file_path)
-
-        db_car.image_filename = filename
+        # Upload new image
+        result = cloudinary.uploader.upload(file.file, folder="car_images")
+        db_car.image_url = result["secure_url"]
 
     db.commit()
     db.refresh(db_car)
 
     return db_car
+
 
 @app.get("/")
 def read_root():

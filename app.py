@@ -53,7 +53,7 @@ class Car(Base):
     make = Column(String, index=True)
     model = Column(String, index=True)
     year = Column(Integer)
-    image_filename = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
 
 # Pydantic models (Schemas)
 class CarBase(BaseModel):
@@ -125,11 +125,11 @@ def create_cars(
         db.commit()
         db.refresh(db_car)
 
-        # Upload image to Cloudinary
+        # ✅ Upload image to Cloudinary if a file exists
         if files and files[i]:
             file = files[i]
             result = cloudinary.uploader.upload(file.file, folder="car_images")
-            db_car.image_url = result["secure_url"]  # Store Cloudinary URL
+            db_car.image_url = result["secure_url"]  # ✅ Store Cloudinary URL in DB
 
             db.commit()
             db.refresh(db_car)
@@ -137,6 +137,7 @@ def create_cars(
         db_cars.append(db_car)
 
     return db_cars
+
 
 
 # Get all cars
@@ -155,21 +156,22 @@ def get_cars(db: Session = Depends(get_db)):
 #     db_car.image_url = f"/car_images/{db_car.image_filename}" if db_car.image_filename else None
 #     return db_car
 
-@app.delete("/cars/{car_id}")
+
 @app.delete("/cars/{car_id}")
 def delete_car(car_id: int, db: Session = Depends(get_db)):
     db_car = db.query(Car).filter(Car.id == car_id).first()
     if not db_car:
         raise HTTPException(status_code=404, detail="Car not found")
 
-    # Delete image from Cloudinary if exists
+    # ✅ Correctly extract the public_id from Cloudinary URL
     if db_car.image_url:
-        public_id = db_car.image_url.split("/")[-1].split(".")[0]
-        cloudinary.uploader.destroy(public_id)
+        public_id = db_car.image_url.split("/")[-1].rsplit(".", 1)[0]  # Extract filename without extension
+        cloudinary.uploader.destroy(f"car_images/{public_id}")  # ✅ Properly reference Cloudinary folder
 
     db.delete(db_car)
     db.commit()
     return {"message": "Car deleted successfully"}
+
 
 @app.put("/cars/{car_id}")
 def update_car(
